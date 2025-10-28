@@ -3,18 +3,20 @@ from sklearn.datasets import fetch_openml
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import accuracy_score, roc_curve, auc
 from sklearn.preprocessing import label_binarize
+from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from scipy.stats import multivariate_normal
 
 print("Loading MNIST...")
 mnist = fetch_openml('mnist_784', version=1)
 X = mnist.data / 255.0
 y = mnist.target.astype(int)
 
-n_train = 10000
-n_test = 2000
-X_train, X_test = X[:n_train], X[-n_test:]
-y_train, y_test = y[:n_train], y[-n_test:]
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, train_size=10000, test_size=2000, stratify=y, random_state=0
+)
 
 
 print("\nTraining Gaussian Models...")
@@ -30,16 +32,24 @@ for c in classes:
     priors[c] = len(Xc) / len(X_train)
 
 def gaussian_log_likelihood(X, mean, cov):
-    d = X.shape[1]
-    diff = X - mean
-    sign, logdet = np.linalg.slogdet(cov)
-    if sign <= 0:
-        cov = cov + 1e-6 * np.eye(d)
-        sign, logdet = np.linalg.slogdet(cov)
-    cov_inv = np.linalg.inv(cov)
-    exp_term = np.einsum('ij,jk,ik->i', diff, cov_inv, diff)
-    log_norm_const = 0.5 * (d * np.log(2 * np.pi) + logdet)
-    return -0.5 * exp_term - log_norm_const
+    try:
+        return multivariate_normal.logpdf(X, mean=mean, cov=cov)
+    except Exception as e:
+        try:
+            d = X.shape[1]
+            cov_reg = cov + 1e-6 * np.eye(d)
+            return multivariate_normal.logpdf(X, mean=mean, cov=cov_reg)
+        except Exception:
+            d = X.shape[1]
+            diff = X - mean
+            sign, logdet = np.linalg.slogdet(cov)
+            if sign <= 0:
+                cov = cov + 1e-6 * np.eye(d)
+                sign, logdet = np.linalg.slogdet(cov)
+            cov_inv = np.linalg.inv(cov)
+            exp_term = np.einsum('ij,jk,ik->i', diff, cov_inv, diff)
+            log_norm_const = 0.5 * (d * np.log(2 * np.pi) + logdet)
+            return -0.5 * exp_term - log_norm_const
 
 log_probs_gauss = np.zeros((X_test.shape[0], len(classes)))
 for i, c in enumerate(classes):
@@ -57,7 +67,6 @@ for c in tqdm(classes):
     Xc = X_train[y_train == c]
     gmms[c] = GaussianMixture(n_components=K, covariance_type='full', max_iter=50, random_state=0)
     gmms[c].fit(Xc)
-
 log_probs_gmm = np.zeros((X_test.shape[0], len(classes)))
 for i, c in enumerate(classes):
     log_probs_gmm[:, i] = gmms[c].score_samples(X_test) + np.log(priors[c])
@@ -66,9 +75,7 @@ y_pred_gmm = np.argmax(log_probs_gmm, axis=1)
 acc_gmm = accuracy_score(y_test, y_pred_gmm)
 print(f"GMM Model Accuracy: {acc_gmm:.4f}")
 
-
 y_test_bin = label_binarize(y_test, classes=classes)
-
 
 fpr_gauss, tpr_gauss, auc_gauss = {}, {}, {}
 for i, c in enumerate(classes):
@@ -81,17 +88,32 @@ for i, c in enumerate(classes):
     fpr_gmm[c], tpr_gmm[c], _ = roc_curve(y_test_bin[:, i], log_probs_gmm[:, i])
     auc_gmm[c] = auc(fpr_gmm[c], tpr_gmm[c])
 
+n_classes = len(classes)
+cols = 5
+rows = int(np.ceil(n_classes / cols))
+fig, axes = plt.subplots(rows, cols, figsize=(cols * 4, rows * 3), sharex=True, sharey=True)
+axes = axes.flatten()
 
-plt.figure(figsize=(14, 10))
-for c in classes:
-    plt.plot(fpr_gauss[c], tpr_gauss[c], linestyle='--', label=f'Gaussian (class {c}, AUC={auc_gauss[c]:.2f})')
-    plt.plot(fpr_gmm[c], tpr_gmm[c], label=f'GMM (class {c}, AUC={auc_gmm[c]:.2f})')
-plt.xlabel("False Positive Rate")
-plt.ylabel("True Positive Rate")
-plt.title("ROC Curves for MNIST (Gaussian vs GMM)")
-plt.legend()
-plt.grid(True)
+for idx, c in enumerate(classes):
+    ax = axes[idx]
+    ax.plot(fpr_gauss[c], tpr_gauss[c], linestyle='--', color='tab:blue', label=f'Gaussian (AUC={auc_gauss[c]:.2f})')
+    ax.plot(fpr_gmm[c], tpr_gmm[c], linestyle='-', color='tab:red', label=f'GMM (AUC={auc_gmm[c]:.2f})')
+    ax.plot([0, 1], [0, 1], color='gray', linestyle=':', linewidth=0.8)
+    ax.set_title(f'Class {c}')
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.grid(True, linestyle='--', linewidth=0.5)
+    ax.legend(loc='lower right', fontsize='small')
+
+for j in range(n_classes, rows * cols):
+    fig.delaxes(axes[j])
+
+fig.suptitle("ROC Curves for MNIST (Gaussian vs GMM) — per-class comparison", fontsize=16)
+fig.text(0.5, 0.04, 'False Positive Rate', ha='center')
+fig.text(0.04, 0.5, 'True Positive Rate', va='center', rotation='vertical')
+plt.tight_layout(rect=[0.04, 0.04, 1, 0.96])
 plt.show()
+ 
 
 
 print("\n===== Comparative Results =====")
