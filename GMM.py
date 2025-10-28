@@ -5,7 +5,6 @@ from sklearn.metrics import accuracy_score, roc_curve, auc
 from sklearn.preprocessing import label_binarize
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
-from tqdm import tqdm
 from scipy.stats import multivariate_normal
 
 print("Loading MNIST...")
@@ -63,7 +62,7 @@ print(f"Gaussian Model Accuracy: {acc_gauss:.4f}")
 print("\nTraining Gaussian Mixture Models (K=3)...")
 K = 3
 gmms = {}
-for c in tqdm(classes):
+for c in classes:
     Xc = X_train[y_train == c]
     gmms[c] = GaussianMixture(n_components=K, covariance_type='full', max_iter=50, random_state=0)
     gmms[c].fit(Xc)
@@ -109,16 +108,22 @@ for j in range(n_classes, rows * cols):
     fig.delaxes(axes[j])
 
 fig.suptitle("ROC Curves for MNIST (Gaussian vs GMM) — per-class comparison", fontsize=16)
-fig.text(0.5, 0.04, 'False Positive Rate', ha='center')
-fig.text(0.04, 0.5, 'True Positive Rate', va='center', rotation='vertical')
-plt.tight_layout(rect=[0.04, 0.04, 1, 0.96])
+left_margin = 0.12
+bottom_margin = 0.06
+try:
+    fig.supxlabel('False Positive Rate', fontsize=12, y=bottom_margin / 2)
+    fig.supylabel('True Positive Rate', fontsize=12, x=left_margin / 2)
+except Exception:
+    fig.text(0.5, bottom_margin / 2, 'False Positive Rate', ha='center', va='center')
+    fig.text(left_margin / 2, 0.5, 'True Positive Rate', va='center', ha='center', rotation='vertical')
+
+plt.tight_layout(rect=[left_margin, bottom_margin, 1, 0.96])
+
+print("\n===== Comparative Results =====", flush=True)
+print(f"Gaussian Accuracy: {acc_gauss:.4f}", flush=True)
+print(f"GMM Accuracy:      {acc_gmm:.4f}", flush=True)
+print("\nAverage AUC per class:", flush=True)
+print(f"Gaussian mean AUC: {np.mean(list(auc_gauss.values())):.4f}", flush=True)
+print(f"GMM mean AUC:      {np.mean(list(auc_gmm.values())):.4f}", flush=True)
+
 plt.show()
- 
-
-
-print("\n===== Comparative Results =====")
-print(f"Gaussian Accuracy: {acc_gauss:.4f}")
-print(f"GMM Accuracy:      {acc_gmm:.4f}")
-print("\nAverage AUC per class:")
-print(f"Gaussian mean AUC: {np.mean(list(auc_gauss.values())):.4f}")
-print(f"GMM mean AUC:      {np.mean(list(auc_gmm.values())):.4f}")
