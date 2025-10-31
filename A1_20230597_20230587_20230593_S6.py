@@ -59,8 +59,8 @@ acc_gauss = accuracy_score(y_test, y_pred_gauss)
 print(f"Gaussian Model Accuracy: {acc_gauss:.4f}")
 
 
-print("\nTraining Gaussian Mixture Models (K=3)...")
-K = 3
+print("\nTraining Gaussian Mixture Models (K=7)...")
+K = 7
 gmms = {}
 for c in classes:
     Xc = X_train[y_train == c]
